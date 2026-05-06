@@ -111,3 +111,35 @@ Any dataset with **3 consecutive runs** below the applicable threshold is automa
 - Exported from Informatica IDGC by the Data Governance Officer.
 - Distributed to Domain Leads and EVP of Data.
 - Contents: DQ score trends by domain/layer, open exceptions, consecutive failure flags, rule coverage gaps.
+
+---
+
+## 2.5 Standard DQ Checks Applied to All Entities
+
+A baseline set of DQ checks is automatically provisioned for every entity onboarded to the data platform.
+These checks are deployed by the CD pipeline when an integration PR is merged
+(see [04-release-gates.md § 4.6.1](04-release-gates.md) and [09-project-lifecycle.md § Stage 4a](09-project-lifecycle.md)).
+They are authored as Informatica IDGC DQ rules and are in addition to any entity-specific rules.
+
+### Baseline DQ Rule Set
+
+| Rule | Informatica Rule Type | Threshold | Applies To |
+|------|-----------------------|-----------|------------|
+| **Record count reconciliation** | Row count check against source system | ≤ 0.1 % variance for batch feeds; threshold defined per entity in Data Product Brief for real-time / near-real-time feeds | Landing → Bronze, Bronze → Silver |
+| **Business key (BK) uniqueness** | Duplicate detection on the defined BK column(s) | Zero tolerance — no duplicate BK values | Bronze, Silver |
+| **Mandatory column null rate** | Null / blank check on every `NOT NULL` column | Zero tolerance | Bronze, Silver |
+| **Arrival SLA check** | Data arrival timestamp vs agreed load SLA | Per-entity SLA from Data Product Brief | Landing |
+
+### Provisioning
+
+- The standard rule set is provisioned automatically by the CD pipeline when an Integration PR is merged.
+- The entity's PK and BK must be declared in the DDL and mapping artefact before the CD pipeline can
+  provision the uniqueness check.
+- Thresholds for the record count reconciliation check are read from the Data Product Brief at
+  provisioning time. If no threshold is specified, the default of 0.1 % is applied.
+
+### Entity-Specific Rules
+
+In addition to the standard baseline, the Data Steward must author entity-specific DQ rules in
+Informatica IDGC covering the remaining applicable DQ dimensions (see § 2.1) before the entity can
+progress past the G1 – Bronze Gate.

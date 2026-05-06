@@ -53,6 +53,10 @@ the full medallion architecture lifecycle.
 | Recon Results Store | Delta (`platform_ops` schema) | Platform Lead |
 | Gate & Defect Tracking | Jira | Data Governance Officer |
 | PT Evidence | Databricks Query History + Jira | Data Engineer |
+| **Mapping Artefacts (versioned)** | **Git (`/mappings/`)** | **Data Architect** |
+| **DDL / Schema Artefacts** | **Git (`/ddl/`)** | **Data Architect** |
+| **CI Gate Checks** | **GitHub Actions (CI pipeline)** | **Platform Lead** |
+| **CD Deployment** | **GitHub Actions (CD pipeline)** | **Platform Lead** |
 
 ---
 
@@ -63,10 +67,14 @@ the full medallion architecture lifecycle.
 3. **PT runs in parallel with UAT** — both are required before G4 (Semantic promotion), not sequential.
 4. **Data Analysts** are formal participants in G3 review, UAT authoring/execution, and PT execution.
 5. **Databricks `platform_ops` schema** is the operational observability store (audit records, recon results).
-6. **All code is version-controlled** — direct production edits are prohibited.
+6. **All code and schema artefacts are version-controlled in Git** — direct production edits are prohibited.
 7. **No engineering starts without a signed Data Product Brief** — Stage 0 exit criteria must be met before any pipeline development begins.
-8. **No DDL is approved until it passes the schema standards checklist** — modeler-reviewed DDL is the only DDL executed in any environment.
+8. **No DDL is approved until it passes the schema standards checklist** — modeler-reviewed DDL is the only DDL executed in any environment, deployed exclusively via the CD pipeline.
 9. **Business signs off on data, not visuals** — Stage 6 (Logical Mart Review) confirms semantic correctness before any BI layer is built.
+10. **Gates are enforced through PR reviews, not out-of-band approvals** — every lifecycle gate maps to a Git PR; approvals are recorded as PR reviews; the CD pipeline is triggered on merge.
+11. **Data mappings are versioned Git artefacts** — every mapping change is committed, reviewed, and approved before any downstream pipeline or model work starts.
+12. **CD pipeline is the only permitted DDL execution mechanism** — no individual may execute DDL directly in any Databricks environment; all physical schema changes flow through the Model PR → CD pipeline path.
+13. **Standard DQ checks are auto-provisioned for all entities** — record count reconciliation, BK uniqueness, mandatory-column null rate, and arrival SLA checks are deployed automatically by the CD pipeline when an Integration PR is merged.
 
 ---
 

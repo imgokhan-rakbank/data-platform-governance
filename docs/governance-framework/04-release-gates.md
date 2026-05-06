@@ -2,20 +2,20 @@
 
 ---
 
-## 4.0 Pre-Engineering Prerequisites (Stage 0–3)
+## 4.0 Pre-Engineering Prerequisites (Stages 0–3)
 
 Before the G0 gate can be opened, the data project must have completed the four pre-engineering stages
-defined in the [Data Project Lifecycle](09-project-lifecycle.md). These stages ensure that scope, business
-value, physical design, and DDL are fully resolved before the first line of pipeline code is written.
+defined in the [Data Project Lifecycle](09-project-lifecycle.md). Each stage is enforced by a Git PR
+gate with CI checks and PR approvals. No stage can proceed until the previous stage's PR is merged.
 
-| Lifecycle Stage | Key Exit Criterion | Jira Status Required |
-|----------------|-------------------|---------------------|
-| **Stage 0 – Data Product Definition** | Signed Data Product Brief; Business Owner named; KPIs and SLAs agreed | Stage 0 ticket → Done |
-| **Stage 1 – Data Mapping** | Source→target mapping signed off by Business Owner + Data Architecture | Stage 1 ticket → Done |
-| **Stage 2 – Source Feasibility** | In-scope table inventory reconciled with production reality; constraints logged | Stage 2 ticket → Done |
-| **Stage 3 – Physical Design** | Schema standards checklist passed; modeler-approved DDL in Git | Stage 3 ticket → Done |
+| Lifecycle Stage | Gate | CI/CD Mechanism | Key Exit Criterion |
+|----------------|------|-----------------|-------------------|
+| **Stage 0 – Data Product Definition** | Definitions in Informatica IDGC | CI queries Informatica API; PR blocked if entry/DQ missing | Data product + DQ definitions confirmed in Informatica IDGC |
+| **Stage 1 – Data Mapping** | Mappings complete, layer changes determined | Mapping PR: CI lint + Data Architect approval | Versioned mapping in Git; bronze/silver changes explicitly scoped |
+| **Stage 2 – Source Feasibility** | Source feasibility confirmed | Manual review | In-scope table inventory reconciled with production reality; constraints logged |
+| **Stage 3 – Physical Design** | Model PR approved; CD deploys physical entities | Model PR: CI lint + Data Architect approval → CD pipeline executes DDL | Modeler-approved DDL in Git; physical entities created in Databricks via CD |
 
-> **Hard rule:** No G0 gate ticket can be opened until all four Stage tickets are in Done status.
+> **Hard rule:** No G0 gate ticket can be opened until all four Stage PRs are merged.
 
 ---
 
@@ -219,3 +219,238 @@ After G4 is approved and the dataset is live in the Semantic layer, the project 
 | BAU ownership formally accepted by named Data Engineer and Data Steward | Platform Lead |
 
 See [09-project-lifecycle.md § Stage 10](09-project-lifecycle.md) for the full exit criteria.
+
+---
+
+## 4.6 CI/CD and Gate Automation: New Report / Data Product / Data Integration
+
+This section defines the end-to-end CI/CD workflow and gate automation model for building a new report, data
+product, or data integration. All gates are enforced through Git pull request (PR) reviews, automated CI
+checks, and CD pipelines. Approvals happen on PR reviews — not through out-of-band sign-off processes.
+
+### 4.6.1 Standard DQ Checks Applied to All Entities
+
+A baseline set of DQ checks is automatically provisioned for every new entity onboarded to the platform.
+These checks are deployed by the CD pipeline when an integration PR is merged.
+
+| Check | Description | Threshold |
+|-------|-------------|-----------|
+| **Record count reconciliation** | Compare record count in target vs source; raise an alert on variance | ≤ 0.1 % variance for batch feeds; agreed threshold for real-time / near-real-time feeds (set per entity in Data Product Brief) |
+| **Business key (BK) uniqueness** | Confirm the defined BK is unique in Bronze and Silver | Zero tolerance — zero duplicate BK values |
+| **Mandatory column null rate** | Null check on every column marked `NOT NULL` in the DDL | Zero tolerance |
+| **Arrival SLA check** | Confirm data arrived within the agreed load SLA | Per-entity SLA as defined in the Data Product Brief |
+
+These checks are in addition to any entity-specific DQ rules authored in Informatica IDGC
+(see [02-data-quality.md § 2.5](02-data-quality.md)).
+
+---
+
+### 4.6.2 End-to-End CI/CD and Gate Workflow
+
+The diagram below shows the phases, gates, and CI/CD automation steps for a new build.
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 1 — DATA PRODUCT DEFINITION                                            │
+│  • Document data product in Informatica IDGC governance portal                │
+│  • Define initial DQ definitions for the data product                         │
+│                                                                                │
+│  ► GATE 1 (PR check): CI confirms data product exists in Informatica IDGC     │
+│    with all mandatory attributes; DQ definitions authored                      │
+└───────────────────────────────────────────┬───────────────────────────────────┘
+                                            │
+┌───────────────────────────────────────────▼───────────────────────────────────┐
+│  PHASE 2 — DATA MAPPING (GIT-DRIVEN, VERSIONED)                               │
+│  • Produce column-level mappings: source → landing → bronze → silver → gold   │
+│  • Determine whether new bronze / silver entities or attributes are needed     │
+│  • Commit versioned mapping artefact to Git                                    │
+│                                                                                │
+│  ► GATE 2 (Mapping PR review): Data Architect approves PR; mappings complete; │
+│    required layer changes are explicitly documented (not "TBD")                │
+└───────────────────────────────────────────┬───────────────────────────────────┘
+                                            │
+┌───────────────────────────────────────────▼───────────────────────────────────┐
+│  PHASE 3 — DATA MODELING + DDL (PR-DRIVEN, CD-DEPLOYED)                       │
+│  • Model new / changed silver entities and attributes                          │
+│  • Update bronze→silver and silver→gold mappings                               │
+│  • Model gold layer and semantic layer for the report / data product           │
+│  • Commit DDL (physical table structures) to Git                               │
+│                                                                                │
+│  ► GATE 3 (Model PR review): Data Architect approves PR; schema standards      │
+│    checklist passed; CI lint checks pass                                       │
+│    → On merge: CD pipeline creates / alters physical tables in Databricks      │
+└───────────┬───────────────────────────────────────────────────┬───────────────┘
+            │                                                   │
+            │  (new source entities to onboard)                 │  (layer changes needed)
+            │                                                   │
+┌───────────▼───────────────────────┐             ┌────────────▼───────────────────────┐
+│  PHASE 4a — NEW ENTITY ONBOARDING │             │  PHASE 4b — PIPELINE IMPLEMENTATION │
+│  (Integration PR)                 │             │  (Feature Branch PRs)               │
+│                                   │             │                                     │
+│  • Profile source entity          │             │  Silver pipeline:                   │
+│  • Determine PK and BK            │             │  • Implement in feature branch      │
+│  • Define entity DQ checks;       │             │  • Raise PR; peer review + CI       │
+│    standard checks (§ 4.6.1)      │             │  • Approved → CD deploys pipeline   │
+│    auto-applied                   │             │                                     │
+│  • Register entity in Informatica │             │  Gold pipeline:                     │
+│  • Implement ingest pipeline in   │             │  • Same process as silver           │
+│    feature branch (landing+bronze)│             │  • PR additionally requires Data    │
+│  • Raise integration PR           │             │    Analyst sign-off on business     │
+│                                   │             │    logic correctness                │
+│  ► GATE 4a (Integration PR):      │             │                                     │
+│    CI checks: profiling available,│             │  ► GATE 4b (Pipeline PR):           │
+│    DQ definitions confirmed,      │             │    Required approvals + CI checks   │
+│    PK/BK defined in schema        │             │    must pass before merge           │
+│    → On merge: CD deploys         │             │    → CD deploys on merge            │
+│      ingestion jobs               │             │                                     │
+└───────────────────────────────────┘             └─────────────────────────────────────┘
+```
+
+---
+
+### 4.6.3 Phase 1 — Data Product Definition Gate
+
+**Trigger:** A new report, data product, or data integration is requested.
+
+**Required actions before raising the Phase 1 PR:**
+
+1. Create the data product entry in the Informatica IDGC governance portal with all mandatory catalog
+   attributes (see [01-data-standards.md § 1.2](01-data-standards.md)).
+2. Author the initial DQ rule set for the data product in Informatica IDGC, covering at minimum the
+   standard checks defined in § 4.6.1.
+3. Link the data product to relevant business glossary terms and KPIs.
+
+**Gate artefacts and CI/CD mechanism:**
+
+| Artefact / Check | Automated / Manual | CI/CD Mechanism |
+|------------------|--------------------|-----------------|
+| Data product record in Informatica IDGC with all mandatory attributes | Automated CI check | CI pipeline queries Informatica API; PR blocked if entry missing or incomplete |
+| DQ definitions authored in Informatica IDGC | Manual (Data Steward) + CI confirmation | CI pipeline confirms at least one DQ rule set exists for the asset; PR reviewer verifies coverage |
+| Business glossary linkage | Manual (Data Steward) | PR description checklist; reviewer verifies |
+| PR approved by Data Steward | Manual | GitHub PR: at least 1 Data Steward approval required before merge |
+
+> **Gate mechanism:** CI pipeline queries the Informatica IDGC API on every PR push. The PR is blocked
+> (status check fails) until the data product catalog entry and DQ definitions are confirmed present.
+
+---
+
+### 4.6.4 Phase 2 — Data Mapping Gate (Git-Driven, Versioned)
+
+**Required actions before raising the Mapping PR:**
+
+1. Produce column-level source→target mappings for the full path:
+   `source → landing → bronze → silver → gold`.
+2. Explicitly determine and document whether any **new entities** or **new attributes** are required
+   in the bronze or silver layers (answer must be Y/N with scope — not "TBD").
+3. Commit the mapping artefact to the Git repository under
+   `/mappings/<domain>/<data-product>-v<N>.yaml` (or `.md`), following the versioning convention.
+4. Raise a Mapping PR targeting the integration branch.
+
+**Gate artefacts and CI/CD mechanism:**
+
+| Artefact / Check | Automated / Manual | CI/CD Mechanism |
+|------------------|--------------------|-----------------|
+| Mapping file committed to Git in `/mappings/<domain>/` | Automated CI check | File-presence and path-convention lint on PR |
+| Mapping format and version increment compliant | Automated CI check | Schema validation lint on mapping YAML/MD |
+| All target columns mapped (no unmapped columns) | Manual (Data Architect PR review) | PR approval required |
+| Bronze / silver change determination is explicit (Y/N + scope) | Manual (Data Architect PR review) | PR approval; "TBD" blocks merge |
+| PR approved by Data Architect | Manual | GitHub PR: at least 1 Data Architect approval required before merge |
+
+> **Gate mechanism:** The mapping PR requires a passing CI lint (file path + format) **and** at least
+> one Data Architect approval. The change determination field in the mapping document must be resolved
+> before the approval is granted.
+
+---
+
+### 4.6.5 Phase 3 — Model PR Gate (CD-Deployed to Databricks)
+
+**Required actions before raising the Model PR:**
+
+1. If silver layer changes are required: produce updated logical and physical models for all new or
+   changed entities and attributes.
+2. Update the mapping artefact (from Phase 2) for bronze→silver and silver→gold to reflect the new model.
+3. Model the gold layer and semantic layer tables for the report or data product.
+4. Produce DDL scripts (`CREATE TABLE` / `ALTER TABLE`) for all new or changed physical tables.
+   Commit DDL under `/ddl/<catalog>/<schema>/` in Git.
+5. Complete the schema standards checklist for every new or changed table.
+6. Raise a Model PR including: DDL scripts, updated mappings, and completed schema standards checklist.
+
+**Gate artefacts and CI/CD mechanism:**
+
+| Artefact / Check | Automated / Manual | CI/CD Mechanism |
+|------------------|--------------------|-----------------|
+| DDL scripts committed under `/ddl/<catalog>/<schema>/` | Automated CI check | File-path lint on PR |
+| Schema standards checklist completed and attached to PR | Manual (Data Architect PR review) | PR description checklist; reviewer verifies all items |
+| DDL naming convention compliance | Automated CI check | CI DDL lint (snake_case, version suffix, etc.) |
+| No ad-hoc DDL executed outside the PR process | Automated (environment policy) | Databricks environment policy blocks manual DDL from non-CD service principals |
+| PR approved by Data Architect | Manual | GitHub PR: at least 1 Data Architect approval required before merge |
+
+> **Gate mechanism:** Model PR approved + CI checks pass → CD pipeline is triggered on merge. The CD
+> pipeline is the **only** permitted mechanism for creating or altering physical table structures in
+> Databricks. Manual DDL execution by individuals is blocked by environment policy.
+
+---
+
+### 4.6.6 Phase 4a — New Entity Onboarding (Integration PR)
+
+*Applicable when new source entities need to be ingested into the data platform for the first time.*
+
+**Required actions before raising the Integration PR:**
+
+1. Run data profiling on the source entity in Informatica IDGC.
+2. Determine the **Primary Key (PK)** and **Business Key (BK)** for the entity; record in the mapping
+   artefact and DDL.
+3. Define entity-level DQ checks in Informatica IDGC. The standard checks in § 4.6.1 are automatically
+   provisioned by the CD pipeline; the Data Steward must additionally author any entity-specific rules.
+4. Register the entity in Informatica IDGC with profiling results, PK/BK metadata, and DQ definitions.
+5. Implement the ingestion pipeline (landing + bronze ingest) in a **feature branch**.
+6. Raise an **Integration PR** targeting the integration branch.
+
+**Integration PR automated CI checks (all must pass before human review):**
+
+| PR Check | CI/CD Mechanism |
+|----------|-----------------|
+| Profiling results available in Informatica IDGC for the entity | CI pipeline queries Informatica API |
+| DQ definitions (including standard checks in § 4.6.1) authored in Informatica IDGC | CI pipeline queries Informatica API |
+| PK and BK declared in DDL and recorded in the mapping artefact | DDL lint + mapping schema validation |
+| DDL committed to Git matching the approved model from Phase 3 | File-presence check + DDL diff against model PR |
+| Unit tests covering ingestion logic present and passing | CI test execution |
+| Pipeline naming convention compliant | CI naming lint |
+
+> **Gate mechanism:** All automated CI checks must pass before the PR is eligible for human review.
+> PR requires at least 1 Data Engineer peer approval and 1 Data Steward confirmation that Informatica
+> checks are satisfied. On merge → CD pipeline deploys the ingestion jobs to the target environment.
+
+---
+
+### 4.6.7 Phase 4b — Silver and Gold Pipeline Implementation (Feature Branch PRs)
+
+*Applicable when changes to silver or gold layer pipelines are required.*
+
+#### Silver Pipeline
+
+1. Implement the bronze→silver transformation pipeline in a **feature branch** following the naming
+   convention `feature/<ticket-id>-<short-description>` and the [coding standards](01-data-standards.md).
+2. Raise a PR targeting the integration branch. PR must satisfy:
+
+| Requirement | CI/CD Mechanism |
+|-------------|-----------------|
+| Feature branch naming convention compliant | CI branch-name lint |
+| Peer code review: ≥ 1 Data Engineer approval | GitHub PR approval |
+| Unit tests present and passing in CI | CI test execution |
+| Naming convention lint (pipeline/job/column) passing | CI naming lint |
+| Mapping alignment: all transformations traceable to the versioned mapping artefact | Manual (Data Engineer + Data Architect review) |
+
+3. On PR approval + CI green → merge → CD pipeline deploys the silver pipeline.
+
+#### Gold Pipeline
+
+Same process as the silver pipeline, with one additional requirement:
+
+| Additional Requirement | CI/CD Mechanism |
+|------------------------|-----------------|
+| Data Analyst sign-off on business logic correctness | GitHub PR: at least 1 Data Analyst approval |
+
+> **Gate mechanism:** PRs cannot be merged without all required approvals and passing CI checks.
+> The CD pipeline is triggered automatically on merge to the integration branch and deploys the
+> pipeline to the target Databricks environment.
