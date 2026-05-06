@@ -235,7 +235,7 @@ These checks are deployed by the CD pipeline when an integration PR is merged.
 
 | Check | Description | Threshold |
 |-------|-------------|-----------|
-| **Record count reconciliation** | Compare record count in target vs source; raise an alert on variance | ≤ 0.1 % variance for batch feeds; agreed threshold for real-time / near-real-time feeds (set per entity in Data Product Brief) |
+| **Record count reconciliation** | Compare record count in target vs source; raise an alert on variance | ≤ 0.1% variance for batch feeds; agreed threshold for real-time / near-real-time feeds (set per entity in Data Product Brief) |
 | **Business key (BK) uniqueness** | Confirm the defined BK is unique in Bronze and Silver | Zero tolerance — zero duplicate BK values |
 | **Mandatory column null rate** | Null check on every column marked `NOT NULL` in the DDL | Zero tolerance |
 | **Arrival SLA check** | Confirm data arrived within the agreed load SLA | Per-entity SLA as defined in the Data Product Brief |

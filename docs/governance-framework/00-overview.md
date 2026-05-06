@@ -69,7 +69,7 @@ the full medallion architecture lifecycle.
 5. **Databricks `platform_ops` schema** is the operational observability store (audit records, recon results).
 6. **All code and schema artefacts are version-controlled in Git** — direct production edits are prohibited.
 7. **No engineering starts without a signed Data Product Brief** — Stage 0 exit criteria must be met before any pipeline development begins.
-8. **No DDL is approved until it passes the schema standards checklist** — modeler-reviewed DDL is the only DDL executed in any environment, deployed exclusively via the CD pipeline.
+8. **No DDL is approved until it passes the schema standards checklist** — Data Architect-reviewed DDL is the only DDL executed in any environment, deployed exclusively via the CD pipeline.
 9. **Business signs off on data, not visuals** — Stage 6 (Logical Mart Review) confirms semantic correctness before any BI layer is built.
 10. **Gates are enforced through PR reviews, not out-of-band approvals** — every lifecycle gate maps to a Git PR; approvals are recorded as PR reviews; the CD pipeline is triggered on merge.
 11. **Data mappings are versioned Git artefacts** — every mapping change is committed, reviewed, and approved before any downstream pipeline or model work starts.

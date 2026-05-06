@@ -75,7 +75,7 @@ source of truth from day one.
 | Artefact | Description |
 |----------|-------------|
 | **Data Product Brief** | Decisions supported; primary KPIs; consumers (named individuals/teams); refresh SLA; critical business dimensions; named Data Owner |
-| SLAs/OLAs | Load SLA, query response SLA, data freshness SLA; agreed real-time feed record-count thresholds where applicable |
+| SLAs/OLAs | Load SLA, query response SLA, data freshness SLA; agreed real-time feed record count thresholds where applicable |
 | **Informatica IDGC catalog entry** | Data product registered in Informatica IDGC with all mandatory attributes (see [01-data-standards.md § 1.2](01-data-standards.md)); status: Draft |
 | **Initial DQ definitions** | Initial DQ rule set authored in Informatica IDGC, including the standard checks defined in [04-release-gates.md § 4.6.1](04-release-gates.md); coverage: completeness and uniqueness at minimum |
 | Quality & Recon Approach | High-level statement of how quality will be validated and reconciled against source |
@@ -98,7 +98,7 @@ This gate is enforced by a CI pipeline check on the Stage 0 PR.
 | 2 | Primary KPIs named (even if not fully specified yet) |
 | 3 | Source systems list produced |
 | 4 | In-scope entities and subject areas defined at high level |
-| 5 | SLAs/OLAs explicitly defined and agreed with consuming teams, including record-count variance thresholds for real-time feeds |
+| 5 | SLAs/OLAs explicitly defined and agreed with consuming teams, including record count variance thresholds for real-time feeds |
 | 6 | Quality and reconciliation approach defined at high level |
 | 7 | Data product registered in Informatica IDGC with all mandatory attributes |
 | 8 | Initial DQ definitions (including standard checks) authored in Informatica IDGC |

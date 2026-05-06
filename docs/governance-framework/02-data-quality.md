@@ -125,7 +125,7 @@ They are authored as Informatica IDGC DQ rules and are in addition to any entity
 
 | Rule | Informatica Rule Type | Threshold | Applies To |
 |------|-----------------------|-----------|------------|
-| **Record count reconciliation** | Row count check against source system | ≤ 0.1 % variance for batch feeds; threshold defined per entity in Data Product Brief for real-time / near-real-time feeds | Landing → Bronze, Bronze → Silver |
+| **Record count reconciliation** | Row count check against source system | ≤ 0.1% variance for batch feeds; threshold defined per entity in Data Product Brief for real-time / near-real-time feeds | Landing → Bronze, Bronze → Silver |
 | **Business key (BK) uniqueness** | Duplicate detection on the defined BK column(s) | Zero tolerance — no duplicate BK values | Bronze, Silver |
 | **Mandatory column null rate** | Null / blank check on every `NOT NULL` column | Zero tolerance | Bronze, Silver |
 | **Arrival SLA check** | Data arrival timestamp vs agreed load SLA | Per-entity SLA from Data Product Brief | Landing |
