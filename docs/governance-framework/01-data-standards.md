@@ -136,3 +136,43 @@ Every pipeline **must** emit one audit record per run to the central audit table
 - Schema changes must be backward-compatible where possible (add columns; do not drop or rename).
 - Breaking schema changes require incrementing the entity version (`_v2`, `_v3`) and updating the Informatica catalog entry.
 - Schema is registered in Unity Catalog before the G0 gate is closed (see [04-release-gates.md](04-release-gates.md)).
+
+---
+
+## 1.4 Physical Schema Standards
+
+These standards apply to every table built at any medallion layer. They originate from the Stage 3
+(Data + Physical Design) gate and are enforced through the schema standards checklist that must be
+completed before any DDL is approved.
+
+### Schema Standards Checklist
+
+Every table must pass **all** checks before its DDL is approved for execution in any environment:
+
+| Check | Requirement | Enforcement |
+|-------|-------------|------------|
+| **Primary Key** | PK defined in the logical model and implemented in the `CREATE TABLE` DDL | Data Architect sign-off; CI check |
+| **Foreign Keys** | FKs defined where applicable and implemented — or explicitly waived with documented rationale | Data Architect sign-off |
+| **Datatypes** | All columns have specific, appropriate datatypes; no "all-string" default schemas | Schema review checklist |
+| **Naming convention** | `snake_case`; boolean prefix `is_`/`has_`; timestamp suffix `_at`/`_dt` | CI lint check |
+| **Surrogate key policy** | Surrogate key applied where required — or explicitly stated as not needed with documented rationale | Schema review checklist |
+| **Partition strategy** | Partition column defined and justified; or explicitly not partitioned with rationale | Schema review checklist |
+| **Null constraints** | Mandatory columns marked `NOT NULL`; nullable columns documented with business justification | Schema review checklist |
+
+### DDL Change Control
+
+- DDL execution is permitted **only** using modeler-reviewed, checklist-passed DDL scripts stored in Git.
+- Ad-hoc `ALTER TABLE` commands run directly in notebooks or Databricks UI are **prohibited** in Silver, Gold, and Semantic layers.
+- All DDL changes go through a pull request with review by the Data Architect before merge.
+- DDL version is tied to the entity version: `transactions_v1.ddl`, `transactions_v2.ddl`.
+
+### Data Product Pre-Engineering Stages
+
+Before any pipeline development begins, the following stages must be complete (see [09-project-lifecycle.md](09-project-lifecycle.md)):
+
+| Stage | Key Output | Gating Rule |
+|-------|-----------|-------------|
+| **Stage 0 – Data Product Definition** | Signed Data Product Brief with named Data Owner, KPIs, SLAs | No engineering starts without this |
+| **Stage 1 – Data Mapping** | Source→target mapping approved by Business Owner + Data Architecture | No DDL authoring without this |
+| **Stage 2 – Source Feasibility** | Authoritative table inventory; constraints log | No physical design without this |
+| **Stage 3 – Physical Design** | Modeler-approved DDL + schema standards checklist passed | No pipeline build without this |

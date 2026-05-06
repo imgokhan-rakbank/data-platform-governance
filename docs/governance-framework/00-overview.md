@@ -36,6 +36,7 @@ the full medallion architecture lifecycle.
 | 6 | Performance Testing | [06-performance-testing.md](06-performance-testing.md) |
 | 7 | Operating Model | [07-operating-model.md](07-operating-model.md) |
 | 8 | Rollout Plan & Metrics | [08-rollout-plan.md](08-rollout-plan.md) |
+| 9 | Data Project Lifecycle | [09-project-lifecycle.md](09-project-lifecycle.md) |
 
 ---
 
@@ -63,3 +64,29 @@ the full medallion architecture lifecycle.
 4. **Data Analysts** are formal participants in G3 review, UAT authoring/execution, and PT execution.
 5. **Databricks `platform_ops` schema** is the operational observability store (audit records, recon results).
 6. **All code is version-controlled** — direct production edits are prohibited.
+7. **No engineering starts without a signed Data Product Brief** — Stage 0 exit criteria must be met before any pipeline development begins.
+8. **No DDL is approved until it passes the schema standards checklist** — modeler-reviewed DDL is the only DDL executed in any environment.
+9. **Business signs off on data, not visuals** — Stage 6 (Logical Mart Review) confirms semantic correctness before any BI layer is built.
+
+---
+
+## Data Project Lifecycle Summary
+
+All data projects follow an 11-stage lifecycle. The governance gates in this framework are checkpoints within
+that lifecycle, not a separate process. See [09-project-lifecycle.md](09-project-lifecycle.md) for the full
+stage-by-stage specification.
+
+| Stage | Name | Maps to Gate |
+|-------|------|-------------|
+| Stage 0 | Data Product Definition | Pre-requisite for G0 |
+| Stage 1 | Data Mapping | Pre-requisite for G0 |
+| Stage 2 | Source Feasibility & Inventory | Pre-requisite for G0 |
+| Stage 3 | Data + Physical Design | Pre-requisite for G0 |
+| Stage 4 | Data Engineering Build | G0 – Dev Complete |
+| Stage 4 (ingest) | Bronze ingest | G1 – Bronze Gate |
+| Stage 5 | DQ Validation (Recon Gate) | G2 – Silver Gate |
+| Stage 6 | Logical Mart Review (Data Acceptance) | G3 – Gold Gate |
+| Stage 7 | Semantic / Report Build | G4 – Semantic Gate |
+| Stage 8 | UAT (Usage Validation) | G4 – Semantic Gate |
+| Stage 9 | Production Readiness | G4 – Semantic Gate |
+| Stage 10 | Go-live / Hypercare | Post-G4 |

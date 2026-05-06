@@ -121,3 +121,32 @@ UAT sign-off is provided by the **Business Owner** in Jira:
 
 UAT sign-off is a **prerequisite for opening G4** alongside PT sign-off (see [06-performance-testing.md](06-performance-testing.md)).
 Both must be complete before G4 opens.
+
+---
+
+## 5.7 Stage 8 Exit Criteria (from Data Project Lifecycle)
+
+The following exit criteria come from [Stage 8 of the Data Project Lifecycle](09-project-lifecycle.md) and
+must all be met before UAT can be signed off.
+
+| # | Criterion |
+|---|-----------|
+| 1 | UAT completed using **scenario-based testing**: normal operating cases plus boundary/edge cases |
+| 2 | **Negative tests executed**: invalid dimension combinations, access violations, and edge date handling |
+| 3 | Reconciliation checks **re-run on pre-go-live data** with no unexplained drift from Stage 5 baseline results |
+| 4 | Business Owner provides formal sign-off with the statement: *"I would take the intended decision using this data without relying on alternate spreadsheets."* |
+| 5 | **Accepted variance thresholds explicitly declared** for post-go-live monitoring (e.g. "daily transaction count may vary ± 0.05% from source within T+2") |
+| 6 | **Named ownership agreed** for post-go-live data quality issues: which Data Engineer and Data Steward own each category of incident |
+| 7 | All Critical and High UAT defects resolved; Medium/Low defects have documented Business Owner risk acceptance |
+
+### Negative Test Scenarios (mandatory)
+
+Every UAT cycle must include the following negative test categories:
+
+| Category | Example Test |
+|----------|-------------|
+| Invalid dimension combination | Query with a dimension value that does not exist in the reference data — result must be empty, not an error |
+| Access violation | User in a restricted group attempts to view a Restricted-classification column — must be denied |
+| Edge date handling | Query for data on the exact partition boundary (e.g. first/last day of month, fiscal year end) — must return correct records |
+| Null propagation | Downstream aggregate when a contributing record has a null mandatory field — must not silently drop or zero-fill |
+| Duplicate key scenario | Attempt to load a record with a duplicate business key into a unique-key-enforced table — must be rejected and logged |
