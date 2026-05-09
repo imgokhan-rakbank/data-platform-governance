@@ -121,7 +121,7 @@ These checks are deployed by the CD pipeline when an integration PR is merged
 (see [04-release-gates.md § 4.6.1](04-release-gates.md) and [09-project-lifecycle.md § Stage 4a](09-project-lifecycle.md)).
 They are authored as Informatica IDGC DQ rules and are in addition to any entity-specific rules.
 
-### Baseline DQ Rule Set
+### Baseline DQ Rule Set (Landing + Bronze — auto-provisioned at onboarding)
 
 | Rule | Informatica Rule Type | Threshold | Applies To |
 |------|-----------------------|-----------|------------|
@@ -130,13 +130,46 @@ They are authored as Informatica IDGC DQ rules and are in addition to any entity
 | **Mandatory column null rate** | Null / blank check on every `NOT NULL` column | Zero tolerance | Bronze, Silver |
 | **Arrival SLA check** | Data arrival timestamp vs agreed load SLA | Per-entity SLA from Data Product Brief | Landing |
 
+### Silver-Layer DQ Rules (authored before Silver Pipeline PR)
+
+In addition to the auto-provisioned baseline, the Data Steward must author silver-layer DQ rules in
+Informatica IDGC before the Silver Pipeline PR can be merged. Silver-layer rules must cover:
+
+| Rule type | Description |
+|-----------|-------------|
+| **Referential integrity** | FK relationships validated post-transformation |
+| **Deduplication** | No duplicate business keys in silver output |
+| **Conformance** | Enumerated values within allowed set; dates in valid range |
+| **Mandatory-column null rate** | Null rate on silver-layer `NOT NULL` columns |
+
+The CI pipeline confirms these rules are authored in Informatica IDGC before the Silver Pipeline PR
+can be merged (see [04-release-gates.md § 4.6.7](04-release-gates.md)).
+
+### Gold-Layer DQ Rules (authored before Gold Pipeline PR)
+
+The Data Steward and Data Analyst must author gold-layer DQ rules in Informatica IDGC before the
+Gold Pipeline PR can be merged. Gold-layer rules must cover:
+
+| Rule type | Description |
+|-----------|-------------|
+| **KPI range checks** | Values within historically validated bounds; alert on anomalies |
+| **Business rule completeness** | No null values on KPI numerator/denominator columns |
+| **Aggregation reconciliation** | Gold-layer totals reconcile with silver-layer source records |
+| **Cross-entity consistency** | Where KPIs span multiple source entities, values are mutually consistent |
+
+The CI pipeline confirms these rules are authored in Informatica IDGC before the Gold Pipeline PR
+can be merged (see [04-release-gates.md § 4.6.7](04-release-gates.md)).
+
 ### Provisioning
 
-- The standard rule set is provisioned automatically by the CD pipeline when an Integration PR is merged.
+- The standard baseline rule set (landing + bronze) is provisioned automatically by the CD pipeline
+  when an Integration PR is merged.
 - The entity's PK and BK must be declared in the DDL and mapping artefact before the CD pipeline can
   provision the uniqueness check.
 - Thresholds for the record count reconciliation check are read from the Data Product Brief at
   provisioning time. If no threshold is specified, the default of 0.1 % is applied.
+- Silver and gold layer DQ rules are authored manually by the Data Steward (and Data Analyst for gold)
+  and must be in place before the corresponding pipeline PR can merge.
 
 ### Entity-Specific Rules
 

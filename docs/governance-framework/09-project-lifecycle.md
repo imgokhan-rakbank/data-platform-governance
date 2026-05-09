@@ -334,14 +334,18 @@ on merge. New source entities follow a dedicated **Integration PR** flow.
 
 **Steps:**
 
-1. Implement the bronze→silver transformation pipeline in a feature branch:
+1. **Define silver-layer DQ rules in Informatica IDGC** for every entity or attribute being
+   transformed. Rules must cover: referential integrity, deduplication, conformance checks, and
+   mandatory-column null rate in silver output.
+2. Implement the bronze→silver transformation pipeline in a feature branch:
    `feature/<ticket-id>-<short-description>`.
-2. Raise a PR targeting the integration branch.
+3. Raise a PR targeting the integration branch.
 
 **Silver Pipeline PR requirements:**
 
 | Requirement | CI/CD Mechanism |
 |-------------|-----------------|
+| **Silver-layer DQ rules authored in Informatica IDGC** | **CI queries Informatica API; PR blocked if DQ rules missing for any silver entity in scope** |
 | Feature branch naming convention | CI branch-name lint |
 | Unit tests present and passing | CI test execution |
 | Naming convention lint (pipeline / job / column) | CI naming lint |
@@ -357,12 +361,18 @@ on merge. New source entities follow a dedicated **Integration PR** flow.
 
 *Follow this sub-stage when changes to the silver→gold pipeline are required.*
 
-**Steps:** Same process as Stage 4b.
+**Steps:**
 
-**Gold Pipeline additional requirement:**
+1. **Define gold-layer DQ rules in Informatica IDGC** for every metric, KPI, or derived entity being
+   produced. Rules must cover: KPI range checks, business rule completeness, aggregation reconciliation,
+   and cross-entity consistency.
+2. Same implementation process as Stage 4b (feature branch → PR).
+
+**Gold Pipeline additional requirements:**
 
 | Additional Requirement | CI/CD Mechanism |
 |------------------------|-----------------|
+| **Gold-layer DQ rules authored in Informatica IDGC** | **CI queries Informatica API; PR blocked if DQ rules missing for any gold entity in scope** |
 | Data Analyst sign-off on business logic correctness | GitHub PR: at least 1 Data Analyst approval |
 
 > **Gate:** PR must pass all CI checks including Data Analyst approval before merge.
@@ -377,9 +387,11 @@ on merge. New source entities follow a dedicated **Integration PR** flow.
 | 1 | Pipelines run end-to-end in Dev environment with repeatable, deterministic outputs |
 | 2 | DDL executed **only** via CD pipeline triggered by approved Model PR from Stage 3 |
 | 3 | For new entities: Integration PR merged; ingestion jobs deployed by CD pipeline |
-| 4 | For silver/gold changes: Feature branch PRs merged; pipelines deployed by CD pipeline |
-| 5 | All G0 gate artefacts complete (peer review, CI green, schema registered) |
-| 6 | No ad-hoc schema changes applied outside the approved DDL scripts |
+| 4 | Silver-layer DQ rules authored in Informatica IDGC before Silver Pipeline PR merges |
+| 5 | Gold-layer DQ rules authored in Informatica IDGC before Gold Pipeline PR merges |
+| 6 | For silver/gold changes: Feature branch PRs merged; pipelines deployed by CD pipeline |
+| 7 | All G0 gate artefacts complete (peer review, CI green, schema registered) |
+| 8 | No ad-hoc schema changes applied outside the approved DDL scripts |
 
 ---
 
