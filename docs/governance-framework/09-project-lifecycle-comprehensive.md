@@ -156,10 +156,9 @@ flowchart TD
     S8_UAT --> G4
     S8_PT --> G4
 
-    G4 -- "❌ FAIL\nRemediate then re-raise" --> S9
     S9 --> G4
-
     G4 -- "✅ PASS" --> S10
+    G4 -- "❌ FAIL\nFix defects (UAT/PT/Monitoring)\nthen repeat S9 checks" --> S9
     S10 --> BAU
 ```
 
@@ -265,8 +264,7 @@ known constraints). This automation eliminates the need for a separate manual St
 | # | Step | Who | Tool / Location |
 |---|------|-----|-----------------|
 | 1 | Create a feature branch from the integration branch: `mapping/<domain>/<data-product>-v<N>`. | Data Steward | Git |
-| 2 | Author the **source→target mapping YAML** at `/mappings/<domain>/<data-product>-v<N>.yaml`. Map every target column in Landing, Bronze, Silver, and Gold from its source system column. Leave no column unmapped — use `DERIVED` or `CONSTANT` with a rule expression for computed columns. | Data Analyst | Git / IDE |
-| 3 | For each KPI, write a **precise business-language definition**: the formula, the business rule, what it counts or measures, edge cases. Get draft sign-off from the Business Owner before raising the PR. | Data Analyst | Jira / mapping YAML |
+| 2 | Author the **source→target mapping YAML** at `/mappings/<domain>/<data-product>-v<N>.yaml`. Map every target column in Landing, Bronze, Silver, and Gold from its source system column. Leave no column unmapped — use `DERIVED` or `CONSTANT` with a rule expression for computed columns. | Data Analyst | Git / IDE || 3 | For each KPI, write a **precise business-language definition**: the formula, the business rule, what it counts or measures, edge cases. Get draft sign-off from the Business Owner before raising the PR. | Data Analyst | Jira / mapping YAML |
 | 4 | For each layer transition (Landing→Bronze, Bronze→Silver, Silver→Gold), write the **transformation rules**: filters, deduplication logic, join conditions, aggregation logic. | Data Analyst | Mapping YAML |
 | 5 | Document the **reconciliation approach** per layer transition: what counts will be compared, what tolerance threshold is acceptable, what system is the source of truth. Mark as formally agreed (not "TBD"). | Data Steward + Data Analyst | Mapping YAML |
 | 6 | Commit the mapping YAML and raise a **Mapping PR** targeting the integration branch. | Data Steward | GitHub |
@@ -276,7 +274,10 @@ known constraints). This automation eliminates the need for a separate manual St
 | 10 | Data Architect approves the PR. CI must be green. Merge the Mapping PR. | Data Architect | GitHub |
 
 > **Version control:** Each substantive change to scope or transformations requires a version increment
-> (`v1 → v2`). CI will reject PRs with a missing or invalid version suffix.
+> (`v1 → v2 → v3`, using simple sequential integers). Minor editorial corrections to an existing
+> mapping that do not change any column mapping or transformation rule do not require a version
+> increment but must be committed with a clear commit message. CI will reject PRs with a missing or
+> invalid version suffix.
 
 #### Outputs / Evidence Required
 
@@ -376,7 +377,7 @@ merge.
 | 3 | Extend the logical model to **physical model** settings: partition columns, clustering keys, null constraints (`NOT NULL` where mandatory), surrogate key policy (applied or explicitly waived with rationale). | Data Architect | Erwin |
 | 4 | Author the **Gold and Semantic layer models** in Erwin: aggregated entities for the mart, semantic layer views or tables as designed in the mapping. | Data Architect | Erwin |
 | 5 | **Version-tag the Erwin model** using Erwin's built-in version control. Record the version tag (e.g., `v2.1.0`) — this tag must appear in the Model PR description. | Data Architect | Erwin version control |
-| 6 | **Trigger the DDL generation pipeline**: the pipeline reads the approved Erwin model and auto-generates `CREATE TABLE` / `ALTER TABLE` scripts. Output lands at `/ddl/<catalog>/<schema>/` in Git. Do **not** hand-author any DDL. | DDL generation pipeline | GitHub Actions / Erwin export |
+| 6 | **Trigger the DDL generation pipeline**: the pipeline reads the approved Erwin model and auto-generates `CREATE TABLE` / `ALTER TABLE` scripts. Output lands at `/ddl/<catalog>/<schema>/` in Git. Do **not** hand-author any DDL. | Data Architect (triggers pipeline) | GitHub Actions / Erwin export |
 | 7 | **Complete the Schema Standards Checklist** for every in-scope table (see checklist below). Attach the completed checklist to the Model PR. | Data Architect | GitHub PR description |
 | 8 | **Update the mapping artefact** in Git: version-increment the mapping YAML to reflect any changes to the physical model that require mapping adjustments. | Data Architect | Git |
 | 9 | **Author DQ rules in Informatica IDGC** for all three layers: <br>• **Bronze:** standard checks + entity-specific rules <br>• **Silver:** referential integrity, deduplication, conformance, null rate <br>• **Gold:** KPI range, completeness, aggregation reconciliation, cross-entity consistency | Data Steward (DQ rules) + Data Architect (review) | Informatica IDGC |
@@ -589,7 +590,7 @@ Data Engineer) must pass.
 | # | Step | Who | Tool / Location |
 |---|------|-----|-----------------|
 | 1 | Promote the pipeline to the **Staging environment** (or confirm Dev data is production-representative). | Data Engineer | Databricks CD |
-| 2 | **Trigger DQ rules execution** in Informatica IDGC against the silver layer entities. Wait for DQ scorecard to populate: completeness, consistency, validity, timeliness scores. | Data Steward | Informatica IDGC |
+| 2 | **Trigger DQ rules execution** in Informatica IDGC against the silver layer entities. Wait for the DQ scorecard to populate (typically within minutes for batch rule sets; allow up to 30 minutes for large entity sets). Scores are reported across: completeness, consistency, validity, and timeliness. | Data Steward | Informatica IDGC |
 | 3 | Review the **DQ scorecard**. Confirm the aggregate score is **≥ 90** (the Bronze→Silver threshold per [02-data-quality.md](02-data-quality.md)). Any score below 90 is a FAIL — identify failing rules, raise Jira defects, and return to the engineering team. | Data Steward | Informatica IDGC / Jira |
 | 4 | Run **reconciliation** against source systems: execute recon queries against `platform_ops.recon_results`. Compare source row counts, control totals, and aggregated figures against the agreed reconciliation rules from Stage 1. | Data Steward | Databricks (`platform_ops` schema) |
 | 5 | Compare recon results against the **agreed tolerances** defined in Stage 1. Any variance outside tolerance is a FAIL unless the Data Owner formally accepts it in writing (Jira comment). | Data Steward + Data Owner | Jira |
@@ -766,7 +767,7 @@ without resorting to alternative spreadsheets or shadow data sources.
 | 5 | Log all **defects in Jira** with business-assigned severity: Critical, High, Medium, or Low. Critical and High defects block go-live; Medium/Low require documented Business Owner risk acceptance to proceed. | Business Owner | Jira |
 | 6 | Data Engineering team **resolves Critical and High defects**, re-deploys, and re-runs affected test scenarios. | Data Engineer | Databricks / GitHub |
 | 7 | **Re-run reconciliation** on the near-final UAT dataset immediately before proceeding to Stage 9. Confirm no unexplained drift from Stage 5 recon results. | Data Steward | Databricks (`platform_ops.recon_results`) |
-| 8 | Business Owner records formal **UAT sign-off** in Jira: *"I would take the intended decision using this data without alternate spreadsheets."* | Business Owner | Jira G4 ticket |
+| 8 | Business Owner records formal **UAT sign-off** in Jira: *"I would take the intended decision using this data without alternate spreadsheets."* Record this as a comment on the **G4 Jira gate ticket**, which is the single consolidated ticket covering UAT, PT, semantic build, and production readiness sign-offs for the G4 gate. | Business Owner | Jira G4 ticket |
 | 9 | Declare **accepted variance thresholds** for post-go-live monitoring (any variance seen in UAT that was accepted). | Business Owner + Data Owner | Jira |
 | 10 | Confirm **named ownership for post-go-live data quality issues** (who does a consumer call if the data looks wrong?). | Data Owner | Jira |
 
