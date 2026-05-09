@@ -228,33 +228,51 @@ This section defines the end-to-end CI/CD workflow and gate automation model for
 product, or data integration. All gates are enforced through Git pull request (PR) reviews, automated CI
 checks, and CD pipelines. Approvals happen on PR reviews — not through out-of-band sign-off processes.
 
-### 4.6.1 Standard DQ Checks Applied to All Entities
+### 4.6.1 DQ Rule Definitions and Implementation Across Layers
 
-A baseline set of DQ checks is automatically provisioned for every new entity onboarded to the platform.
-These checks are deployed by the CD pipeline when an integration PR is merged.
+DQ rules follow a two-step pattern across the delivery lifecycle:
 
-| Check | Description | Threshold |
-|-------|-------------|-----------|
+1. **Definition (Phase 3 — Model PR):** All DQ rules for bronze, silver, and gold layers are
+   **defined in Informatica IDGC** as part of the Phase 3 modeling activity. Rule definitions are
+   linked to the data model and recorded as gate artefacts in the Model PR.
+2. **Implementation / Deployment (Phases 4a and 4b):** DQ rules are **activated and deployed** when
+   the corresponding pipeline PR is merged. For bronze, the standard rule set is auto-provisioned
+   by the CD pipeline. For silver and gold, the CI confirms rules are authored before the pipeline
+   PR can merge.
+
+#### Standard DQ Rules — Bronze Layer (auto-provisioned at Phase 4a merge)
+
+| Rule | Description | Threshold |
+|------|-------------|-----------|
 | **Record count reconciliation** | Compare record count in target vs source; raise an alert on variance | ≤ 0.1% variance for batch feeds; agreed threshold for real-time / near-real-time feeds (set per entity in Data Product Brief) |
-| **Business key (BK) uniqueness** | Confirm the defined BK is unique in Bronze and Silver | Zero tolerance — zero duplicate BK values |
+| **Business key (BK) uniqueness** | Confirm the defined BK is unique in Bronze | Zero tolerance — zero duplicate BK values |
 | **Mandatory column null rate** | Null check on every column marked `NOT NULL` in the DDL | Zero tolerance |
 | **Arrival SLA check** | Confirm data arrived within the agreed load SLA | Per-entity SLA as defined in the Data Product Brief |
 
-These standard checks apply to the **landing and bronze layers** at entity onboarding (Phase 4a).
+These standard checks are auto-provisioned by the CD pipeline on every Integration PR merge.
+The Data Steward must additionally author any entity-specific bronze rules in Informatica IDGC.
 
-In addition, **layer-specific DQ rules** must be implemented in Informatica IDGC for each layer as
-the corresponding pipeline is built:
+#### DQ Rules — Silver Layer (defined in Phase 3; CI-confirmed before Phase 4b merge)
 
-| Layer | When authored | DQ rule examples |
-|-------|--------------|-----------------|
-| **Silver** | Before the Silver Pipeline PR is raised (Phase 4b) | Referential integrity, deduplication, conformance, mandatory-column null rate in silver output |
-| **Gold** | Before the Gold Pipeline PR is raised (Phase 4b) | KPI range checks, business rule completeness, aggregation reconciliation, cross-entity consistency |
+| Rule type | Description |
+|-----------|-------------|
+| **Referential integrity** | FK relationships validated post-transformation |
+| **Deduplication** | No duplicate business keys in silver output |
+| **Conformance** | Enumerated values within allowed set; dates in valid range |
+| **Mandatory-column null rate** | Null rate on silver-layer `NOT NULL` columns |
 
-CI confirms that layer-specific DQ rules are authored in Informatica IDGC before the corresponding
-pipeline PR can be merged (see §§ 4.6.6–4.6.7).
+#### DQ Rules — Gold Layer (defined in Phase 3; CI-confirmed before Phase 4b merge)
 
-These checks are in addition to any entity-specific DQ rules authored in Informatica IDGC
-(see [02-data-quality.md § 2.5](02-data-quality.md)).
+| Rule type | Description |
+|-----------|-------------|
+| **KPI range checks** | Values within historically validated bounds; alert on anomalies |
+| **Business rule completeness** | No null values on KPI numerator/denominator columns |
+| **Aggregation reconciliation** | Gold-layer totals reconcile with silver-layer source records |
+| **Cross-entity consistency** | Where KPIs span multiple source entities, values are mutually consistent |
+
+> CI confirms that DQ rules for each layer are authored in Informatica IDGC before the corresponding
+> pipeline PR can be merged (see §§ 4.6.6–4.6.7). For further detail see
+> [02-data-quality.md § 2.5](02-data-quality.md).
 
 ---
 
@@ -286,15 +304,21 @@ The diagram below shows the phases, gates, and CI/CD automation steps for a new 
 └───────────────────────────────────────────┬───────────────────────────────────┘
                                             │
 ┌───────────────────────────────────────────▼───────────────────────────────────┐
-│  PHASE 3 — DATA MODELING + DDL (PR-DRIVEN, CD-DEPLOYED)                       │
+│  PHASE 3 — DATA MODELING + DDL + DQ RULE DEFINITION (PR-DRIVEN, CD-DEPLOYED)  │
 │  • Model new / changed silver, gold, and semantic entities in Erwin            │
 │  • Model changes versioned in Erwin (Erwin version control)                   │
 │  • Update bronze→silver and silver→gold mappings                               │
 │  • Pipeline auto-generates DDL from the approved Erwin model                  │
-│  • Once all artifacts ready (Erwin model + auto-generated DDL): PR raised     │
+│  • Define DQ rules for ALL layers in Informatica IDGC:                        │
+│      – Bronze: standard checks + entity-specific rules                        │
+│      – Silver: referential integrity, dedup, conformance, null rate           │
+│      – Gold: KPI range, completeness, aggregation recon, cross-entity         │
+│  • Once all artifacts ready (Erwin model + DDL + DQ rule definitions): PR     │
+│    raised                                                                      │
 │                                                                                │
 │  ► GATE 3 (Model PR review): Data Architect approves PR; schema standards      │
-│    checklist passed; CI lint checks pass on auto-generated DDL                │
+│    checklist passed; CI lint checks pass on auto-generated DDL; DQ rules      │
+│    authored in Informatica IDGC for all layers confirmed                      │
 │    → On merge: CD pipeline creates / alters physical tables in Databricks      │
 └───────────┬───────────────────────────────────────────────────┬───────────────┘
             │                                                   │
@@ -305,29 +329,25 @@ The diagram below shows the phases, gates, and CI/CD automation steps for a new 
 │  (Integration PR)                 │             │  (Feature Branch PRs)               │
 │                                   │             │                                     │
 │  • Profile source entity          │             │  Silver pipeline:                   │
-│  • Determine PK and BK            │             │  • Define silver-layer DQ rules in  │
-│  • Define entity DQ checks;       │             │    Informatica IDGC (transformation │
-│    standard checks (§ 4.6.1)      │             │    quality, referential integrity,  │
-│    auto-applied                   │             │    dedup, conformance checks)       │
-│  • Register entity in Informatica │             │  • Implement pipeline in feature    │
-│  • Implement ingest pipeline in   │             │    branch; raise PR; peer review    │
-│    feature branch (landing+bronze)│             │    + CI checks (incl. DQ rules      │
-│  • Raise integration PR           │             │    confirmed in Informatica)        │
-│                                   │             │  • Approved → CD deploys pipeline   │
-│  ► GATE 4a (Integration PR):      │             │                                     │
-│    CI checks: profiling available,│             │  Gold pipeline:                     │
-│    DQ definitions confirmed,      │             │  • Define gold-layer DQ rules in    │
-│    PK/BK defined in schema        │             │    Informatica IDGC (business rule  │
-│    → On merge: CD deploys         │             │    validation, KPI range checks,    │
-│      ingestion jobs               │             │    completeness checks)             │
+│  • Determine PK and BK            │             │  • Implement pipeline in feature    │
+│  • Implement entity DQ checks     │             │    branch (DQ rules for silver      │
+│    defined in Phase 3; standard   │             │    already defined in Phase 3)      │
+│    checks (§ 4.6.1) auto-applied  │             │  • Raise PR; peer review + CI       │
+│    by CD on merge                 │             │    checks (CI confirms silver DQ    │
+│  • Register entity in Informatica │             │    rules present in Informatica)    │
+│  • Implement ingest pipeline in   │             │  • Approved → CD deploys pipeline   │
+│    feature branch (landing+bronze)│             │                                     │
+│  • Raise integration PR           │             │  Gold pipeline:                     │
 │                                   │             │  • Same PR process as silver        │
-│                                   │             │  • PR additionally requires Data    │
-│                                   │             │    Analyst sign-off on business     │
-│                                   │             │    logic correctness                │
-│                                   │             │                                     │
-│                                   │             │  ► GATE 4b (Pipeline PR):           │
-│                                   │             │    CI confirms DQ rules authored in │
-│                                   │             │    Informatica for the layer; all   │
+│  ► GATE 4a (Integration PR):      │             │  • CI confirms gold DQ rules        │
+│    CI checks: profiling available,│             │    present in Informatica            │
+│    DQ definitions confirmed in    │             │  • PR additionally requires Data    │
+│    Informatica, PK/BK defined in  │             │    Analyst sign-off on business     │
+│    schema                         │             │    logic correctness                │
+│    → On merge: CD deploys         │             │                                     │
+│      ingestion jobs + auto-       │             │  ► GATE 4b (Pipeline PR):           │
+│      provisions standard DQ       │             │    CI confirms DQ rules authored in │
+│      checks for bronze            │             │    Informatica for the layer; all   │
 │                                   │             │    other CI checks + required        │
 │                                   │             │    approvals must pass before merge │
 │                                   │             │    → CD deploys on merge            │
@@ -417,9 +437,17 @@ bronze/silver/gold/semantic entities and attributes require changes.
    committed to Git under `/ddl/<catalog>/<schema>/` — no manual DDL authoring is permitted.
 4. **Update mapping artefact:** Bronze→silver and silver→gold mapping artefacts are updated and
    version-incremented to reflect the new model.
-5. **Once all artifacts are ready** (Erwin model version-tagged + auto-generated DDL committed +
-   mapping updated), the **Model PR is raised** targeting the integration branch.
-6. Complete the schema standards checklist for every new or changed table; attach to the PR.
+5. **Define DQ rules for all layers in Informatica IDGC:** For every new or changed entity across
+   bronze, silver, and gold, the Data Steward authors DQ rules in Informatica IDGC as defined in
+   § 4.6.1. All three layers' rule sets must be authored before the Model PR is raised:
+   - **Bronze:** Standard checks (§ 4.6.1) + any entity-specific rules
+   - **Silver:** Referential integrity, deduplication, conformance, mandatory-column null rate
+   - **Gold:** KPI range checks, business rule completeness, aggregation reconciliation,
+     cross-entity consistency
+6. **Once all artifacts are ready** (Erwin model version-tagged + auto-generated DDL committed +
+   mapping updated + DQ rules authored for all layers), the **Model PR is raised** targeting the
+   integration branch.
+7. Complete the schema standards checklist for every new or changed table; attach to the PR.
 
 **Gate artefacts and CI/CD mechanism:**
 
@@ -430,15 +458,16 @@ bronze/silver/gold/semantic entities and attributes require changes.
 | DDL naming convention compliance | Automated CI check | CI DDL lint (snake_case, version suffix, etc.) |
 | Schema standards checklist completed and attached to PR | Manual (Data Architect PR review) | PR description checklist; reviewer verifies all items |
 | Updated mapping artefact version-incremented in Git | Automated CI check | CI format lint on mapping file |
+| **DQ rules authored in Informatica IDGC for bronze, silver, and gold** | **Manual (Data Steward) + CI confirmation** | **CI pipeline queries Informatica API and confirms DQ rules exist for all in-scope entities across all three layers; PR blocked if any layer is missing rule coverage** |
 | No ad-hoc DDL executed outside the PR process | Automated (environment policy) | Databricks environment policy blocks manual DDL from non-CD service principals |
 | PR approved by Data Architect | Manual | GitHub PR: at least 1 Data Architect approval required before merge |
 
 > **Gate mechanism:** The Model PR is raised only after all artifacts are ready (Erwin model
-> version-tagged, DDL auto-generated by pipeline, mapping updated). On PR approval + CI checks
-> pass → merge → CD pipeline is triggered. The CD pipeline is the **only** permitted mechanism for
-> creating or altering physical table structures in Databricks. Manual DDL execution by individuals
-> is blocked by environment policy. Manual DDL authoring is also prohibited — all DDL must be
-> generated by the DDL generation pipeline from the approved Erwin model.
+> version-tagged, DDL auto-generated by pipeline, mapping updated, and DQ rules authored for all
+> layers). On PR approval + CI checks pass → merge → CD pipeline is triggered. The CD pipeline is
+> the **only** permitted mechanism for creating or altering physical table structures in Databricks.
+> Manual DDL execution by individuals is blocked by environment policy. Manual DDL authoring is also
+> prohibited — all DDL must be generated by the DDL generation pipeline from the approved Erwin model.
 
 ---
 
@@ -451,9 +480,10 @@ bronze/silver/gold/semantic entities and attributes require changes.
 1. Run data profiling on the source entity in Informatica IDGC.
 2. Determine the **Primary Key (PK)** and **Business Key (BK)** for the entity; record in the mapping
    artefact and DDL.
-3. Define entity-level DQ checks in Informatica IDGC. The standard checks in § 4.6.1 are automatically
-   provisioned by the CD pipeline; the Data Steward must additionally author any entity-specific rules.
-4. Register the entity in Informatica IDGC with profiling results, PK/BK metadata, and DQ definitions.
+3. Confirm that the bronze-layer DQ rules for this entity were authored in Informatica IDGC during
+   Phase 3. The standard checks in § 4.6.1 are automatically provisioned by the CD pipeline on merge;
+   any entity-specific rules must already be authored by the Data Steward.
+4. Register the entity in Informatica IDGC with profiling results and PK/BK metadata.
 5. Implement the ingestion pipeline (landing + bronze ingest) in a **feature branch**.
 6. Raise an **Integration PR** targeting the integration branch.
 
@@ -462,7 +492,7 @@ bronze/silver/gold/semantic entities and attributes require changes.
 | PR Check | CI/CD Mechanism |
 |----------|-----------------|
 | Profiling results available in Informatica IDGC for the entity | CI pipeline queries Informatica API |
-| DQ definitions (including standard checks in § 4.6.1) authored in Informatica IDGC | CI pipeline queries Informatica API |
+| Bronze DQ rules (standard + entity-specific) authored in Informatica IDGC | CI pipeline queries Informatica API |
 | PK and BK declared in DDL and recorded in the mapping artefact | DDL lint + mapping schema validation |
 | DDL committed to Git matching the approved model from Phase 3 | File-presence check + DDL diff against model PR |
 | Unit tests covering ingestion logic present and passing | CI test execution |
@@ -470,7 +500,8 @@ bronze/silver/gold/semantic entities and attributes require changes.
 
 > **Gate mechanism:** All automated CI checks must pass before the PR is eligible for human review.
 > PR requires at least 1 Data Engineer peer approval and 1 Data Steward confirmation that Informatica
-> checks are satisfied. On merge → CD pipeline deploys the ingestion jobs to the target environment.
+> checks are satisfied. On merge → CD pipeline deploys the ingestion jobs and auto-provisions the
+> standard bronze DQ checks to the target environment.
 
 ---
 
@@ -478,14 +509,14 @@ bronze/silver/gold/semantic entities and attributes require changes.
 
 *Applicable when changes to silver or gold layer pipelines are required.*
 
+DQ rules for the silver and gold layers were **defined in Informatica IDGC during Phase 3**
+(see § 4.6.5 and § 4.6.1). Phases 4b and 4c are responsible for **implementing** (deploying and
+activating) those pre-defined rules alongside the pipeline code.
+
 #### Silver Pipeline
 
-1. **Define silver-layer DQ rules in Informatica IDGC** for every entity or attribute being transformed.
-   Silver DQ rules cover transformation quality and correctness, including:
-   - Referential integrity checks (FK relationships validated post-transformation)
-   - Deduplication checks (no duplicate business keys in silver output)
-   - Conformance checks (enumerated values within allowed set; dates in valid range)
-   - Null rate checks on silver-layer mandatory columns
+1. Confirm that silver-layer DQ rules for all in-scope entities were authored in Informatica IDGC
+   during Phase 3. If any rules are missing, they must be authored before this PR is raised.
 2. Implement the bronze→silver transformation pipeline in a **feature branch** following the naming
    convention `feature/<ticket-id>-<short-description>` and the [coding standards](01-data-standards.md).
 3. Raise a PR targeting the integration branch. PR must satisfy:
@@ -503,12 +534,8 @@ bronze/silver/gold/semantic entities and attributes require changes.
 
 #### Gold Pipeline
 
-1. **Define gold-layer DQ rules in Informatica IDGC** for every metric, KPI, or derived entity being
-   produced. Gold DQ rules cover business rule validation and output correctness, including:
-   - KPI range checks (values within historically validated bounds; alert on anomalies)
-   - Business rule completeness (no null values on KPI numerator/denominator columns)
-   - Aggregation reconciliation (gold-layer totals reconcile with silver-layer source records)
-   - Cross-entity consistency checks where KPIs span multiple source entities
+1. Confirm that gold-layer DQ rules for all in-scope entities were authored in Informatica IDGC
+   during Phase 3. If any rules are missing, they must be authored before this PR is raised.
 2. Same implementation process as the silver pipeline (feature branch → PR).
 3. PR must satisfy all silver requirements **plus**:
 
