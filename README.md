@@ -15,7 +15,7 @@ Informatica IDGC | Unity Catalog
 | [01 – Data Standards](docs/governance-framework/01-data-standards.md) | Naming conventions, metadata standards, coding & pipeline standards |
 | [02 – Data Quality](docs/governance-framework/02-data-quality.md) | DQ engine (Informatica), profiling, scoring thresholds, ownership |
 | [03 – Reconciliation](docs/governance-framework/03-reconciliation.md) | Recon architecture, checks per layer transition, failure response |
-| [04 – Release Gates](docs/governance-framework/04-release-gates.md) | G0–G4 gate model, artefact checklists, hotfix path |
+| [04 – Release Gates](docs/governance-framework/04-release-gates.md) | G0–G4 gate model, artefact checklists, CI/CD gate automation, hotfix path |
 | [05 – UAT](docs/governance-framework/05-uat.md) | UAT scope, entry criteria, test case authoring, sign-off |
 | [06 – Performance Testing](docs/governance-framework/06-performance-testing.md) | PT scope, entry criteria, scenarios & thresholds, sign-off |
 | [07 – Operating Model](docs/governance-framework/07-operating-model.md) | RACI, role descriptions, governance council, escalation path |
@@ -26,13 +26,16 @@ Informatica IDGC | Unity Catalog
 
 ## Quick Reference: Data Project Lifecycle → Gate Mapping
 
-| Lifecycle Stage | Gate | Key Exit Criterion |
-|----------------|------|--------------------|
-| Stage 0 – Data Product Definition | Pre-G0 | Signed Data Product Brief; Business Owner named |
-| Stage 1 – Data Mapping | Pre-G0 | Source→target mapping approved by Business Owner + Architecture |
-| Stage 2 – Source Feasibility | Pre-G0 | Table inventory reconciled with production reality |
-| Stage 3 – Physical Design | Pre-G0 | Schema standards checklist passed; DDL signed off |
-| Stage 4 – Engineering Build | G0 | CI green; modeler-approved DDL only |
+| Lifecycle Stage | Gate | Key Exit Criterion / CI/CD Mechanism |
+|----------------|------|---------------------------------------|
+| Stage 0 – Data Product Definition | Definitions in Informatica IDGC | CI confirms data product + DQ definitions in Informatica IDGC; PR approval |
+| Stage 1 – Data Mapping | Mappings complete, layer changes determined | Mapping PR: CI lint + Data Architect approval; versioned mapping in Git |
+| Stage 2 – Source Feasibility | Source feasibility confirmed | Table inventory reconciled with production reality |
+| Stage 3 – Physical Design | Model PR approved → CD deploys physical entities | Model PR: CI lint + Data Architect approval → CD pipeline creates/alters tables in Databricks |
+| Stage 4a – New Entity Onboarding | Integration PR approved → CD deploys ingest jobs | CI: profiling + DQ + PK/BK checks → Data Engineer + Data Steward approval → CD |
+| Stage 4b – Silver Pipeline | Feature branch PR → CD deploys pipeline | PR: CI checks + peer review + Data Architect review → CD |
+| Stage 4c – Gold Pipeline | Feature branch PR → CD deploys pipeline | PR: CI checks + peer review + Data Analyst sign-off → CD |
+| Stage 4 (Engineering Build) | G0 | CI green; modeler-approved DDL only; pipeline end-to-end in Dev |
 | Stage 4 (ingest) | G1 | Informatica catalog entry + profiling complete |
 | Stage 5 – DQ Validation | G2 | DQ ≥ 90; recon PASS |
 | Stage 6 – Logical Mart Review | G3 | Business sign-off; decision coverage matrix; lineage attested |

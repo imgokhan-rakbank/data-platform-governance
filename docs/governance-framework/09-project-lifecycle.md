@@ -17,8 +17,15 @@ Stage 1   Data Mapping                     │  Pre-Engineering
 Stage 2   Source Feasibility & Inventory   │  (before first line of code)
 Stage 3   Data + Physical Design          ─┘
 
-Stage 4   Data Engineering Build          ─┐  Engineering Build
-          (DDL Change Control)            ─┘  (G0 gate)
+          ↑ Each stage above has a CI/CD-enforced PR gate:
+          ↑ Stage 0 Gate: Definitions in Informatica IDGC
+          ↑ Stage 1 Gate: Mappings complete, layer changes determined (Mapping PR)
+          ↑ Stage 3 Gate: Model PR approved → CD creates physical entities
+
+Stage 4a  New Entity Onboarding           ─── Integration PR → CD deploys ingest
+Stage 4b  Silver Pipeline Build           ─── Feature branch PR → CD deploys pipeline
+Stage 4c  Gold Pipeline Build             ─── Feature branch PR → CD deploys pipeline
+          (G0 gate)
 
 Stage 5   DQ Validation (Recon Gate)      ─── G2 Silver gate
 
@@ -37,7 +44,12 @@ Stage 10  Go-live / Hypercare             ─── Post-production
 
 | Lifecycle Stage | Governance Gate | Document |
 |----------------|----------------|----------|
-| Stage 0–3 | Pre-requisites for G0 | [04-release-gates.md § Pre-G0](04-release-gates.md) |
+| Stage 0 | Definitions in Informatica IDGC | [04-release-gates.md § 4.6.3](04-release-gates.md) |
+| Stage 1 | Mappings complete, layer changes determined (Mapping PR) | [04-release-gates.md § 4.6.4](04-release-gates.md) |
+| Stage 2 | Source feasibility confirmed | This document § Stage 2 |
+| Stage 3 | Model PR approved → CD deploys physical entities | [04-release-gates.md § 4.6.5](04-release-gates.md) |
+| Stage 4a | Integration PR approved → CD deploys ingest jobs | [04-release-gates.md § 4.6.6](04-release-gates.md) |
+| Stage 4b–c | Feature branch PR approved → CD deploys pipelines | [04-release-gates.md § 4.6.7](04-release-gates.md) |
 | Stage 4 | G0 – Dev Complete | [04-release-gates.md § G0](04-release-gates.md) |
 | Stage 4 (ingest) | G1 – Bronze Gate | [04-release-gates.md § G1](04-release-gates.md) |
 | Stage 5 | G2 – Silver Gate | [04-release-gates.md § G2](04-release-gates.md) |
@@ -50,7 +62,9 @@ Stage 10  Go-live / Hypercare             ─── Post-production
 ## Stage 0 — Data Product Definition
 
 **Purpose:** Align scope, business value, and acceptance boundaries. Make use cases, consumers, and
-SLAs/OLAs explicit before any technical work starts.
+SLAs/OLAs explicit before any technical work starts. Register the data product in the Informatica IDGC
+governance portal and define its initial DQ expectations so that the platform's catalog is the single
+source of truth from day one.
 
 ### Inputs
 
@@ -61,8 +75,20 @@ SLAs/OLAs explicit before any technical work starts.
 | Artefact | Description |
 |----------|-------------|
 | **Data Product Brief** | Decisions supported; primary KPIs; consumers (named individuals/teams); refresh SLA; critical business dimensions; named Data Owner |
-| SLAs/OLAs | Load SLA, query response SLA, data freshness SLA |
+| SLAs/OLAs | Load SLA, query response SLA, data freshness SLA; agreed real-time feed record count thresholds where applicable |
+| **Informatica IDGC catalog entry** | Data product registered in Informatica IDGC with all mandatory attributes (see [01-data-standards.md § 1.2](01-data-standards.md)); status: Draft |
+| **Initial DQ definitions** | Initial DQ rule set authored in Informatica IDGC, including the standard checks defined in [04-release-gates.md § 4.6.1](04-release-gates.md); coverage: completeness and uniqueness at minimum |
 | Quality & Recon Approach | High-level statement of how quality will be validated and reconciled against source |
+
+### Gate: Definitions Available in Informatica IDGC
+
+This gate is enforced by a CI pipeline check on the Stage 0 PR.
+
+| Check | Automated / Manual |
+|-------|--------------------|
+| Data product entry exists in Informatica IDGC with all mandatory attributes | **Automated** — CI queries Informatica API; PR blocked if missing or incomplete |
+| Initial DQ definitions (at minimum: standard checks) authored in Informatica IDGC | **Automated** — CI confirms DQ rule set exists; **Manual** — Data Steward PR review for coverage |
+| PR approved by Data Steward | **Manual** — GitHub PR approval |
 
 ### Exit Criteria (Definition of Done)
 
@@ -72,32 +98,62 @@ SLAs/OLAs explicit before any technical work starts.
 | 2 | Primary KPIs named (even if not fully specified yet) |
 | 3 | Source systems list produced |
 | 4 | In-scope entities and subject areas defined at high level |
-| 5 | SLAs/OLAs explicitly defined and agreed with consuming teams |
+| 5 | SLAs/OLAs explicitly defined and agreed with consuming teams, including record count variance thresholds for real-time feeds |
 | 6 | Quality and reconciliation approach defined at high level |
+| 7 | Data product registered in Informatica IDGC with all mandatory attributes |
+| 8 | Initial DQ definitions (including standard checks) authored in Informatica IDGC |
+| 9 | Stage 0 PR merged (Gate: Definitions Available in Informatica IDGC passed) |
 
-> **Hard rule:** No engineering work begins until Stage 0 exit criteria are met and the Jira epic is in
-> "Stage 0 – Done" status.
+> **Hard rule:** No engineering work begins until Stage 0 exit criteria are met and the Stage 0 PR
+> is merged to the integration branch.
 
 ---
 
-## Stage 1 — Data Mapping
+## Stage 1 — Data Mapping (Git-Driven, Versioned)
 
 **Purpose:** Translate business meaning into data logic. Remove ambiguity before modelling or engineering
-work starts. Prevent later "semantic drift" and BI-layer logic invention.
+work starts. All mapping artefacts are committed to Git and versioned. The CI pipeline automatically
+analyzes the mapping to determine which bronze/silver layer changes are required and generates a source
+feasibility report — eliminating manual Stage 2 as a separate activity.
 
 ### Inputs
 
 - Approved Data Product Brief (Stage 0)
 - Source system list (Stage 0)
+- Data product entry confirmed in Informatica IDGC (Stage 0 gate)
 
 ### Outputs / Evidence
 
 | Artefact | Description |
 |----------|-------------|
-| Source→target mapping | Column-level mapping from source systems to Bronze/Silver/Gold |
+| **Versioned source→target mapping** | Column-level mapping from source systems to Landing / Bronze / Silver / Gold, committed to Git under `/mappings/<domain>/<data-product>-v<N>.yaml` |
+| **CI-generated change-impact report** | Auto-generated by CI pipeline on every PR push; identifies which bronze/silver entities and attributes are affected (new entity, new attribute, attribute change, no change); published as PR artefact |
+| **CI-generated source feasibility report** | Auto-generated by CI pipeline; table inventory, row counts, schema snapshots, known constraints from source systems; published as PR artefact |
 | KPI definitions | Each KPI written in precise business language with formula |
 | Transformation rules | Business rules applied at each layer transition |
 | Reconciliation approach | Agreed method and tolerance for validating each layer transition |
+
+### Git Workflow
+
+- Mapping artefacts are authored in a feature branch and committed to `/mappings/<domain>/`.
+- A **Mapping PR** is raised targeting the integration branch.
+- On every PR push, the CI pipeline **automatically analyzes the mapping** and generates both the
+  change-impact report and the source feasibility report as PR artefacts.
+- Version increments follow the convention `v<N>` (increment `N` for any substantive change to scope
+  or transformations).
+- CI lint checks validate file path, format, and version increment on every PR push.
+
+### Gate: Mappings Complete; Change-Impact and Feasibility Reports Generated
+
+Enforced by the Mapping PR review and automated CI checks (see [04-release-gates.md § 4.6.4](04-release-gates.md)).
+
+| Check | Automated / Manual |
+|-------|--------------------|
+| Mapping file at correct path `/mappings/<domain>/` with valid version suffix | **Automated** — CI file-path and format lint |
+| **Change-impact report generated** (bronze/silver entities/attributes affected) | **Automated** — CI pipeline analyzes mapping and publishes report as PR artefact |
+| **Source feasibility report generated** (table inventory, constraints) | **Automated** — CI pipeline interrogates source metadata and publishes report as PR artefact |
+| All target columns mapped (no unmapped columns) | **Manual** — Data Architect reviews CI-generated reports and approves PR |
+| PR approved by Data Architect | **Manual** — GitHub PR approval |
 
 ### Exit Criteria (Definition of Done)
 
@@ -105,8 +161,11 @@ work starts. Prevent later "semantic drift" and BI-layer logic invention.
 |---|-----------|
 | 1 | KPI definitions written in business language and approved by Business Owner |
 | 2 | Source→target mapping reviewed and signed off by Data Product Owner + Data Architecture |
-| 3 | Reconciliation logic explicitly agreed (not left as "TBD") |
-| 4 | Transformation rules peer-reviewed by Data Analyst for business correctness |
+| 3 | CI-generated change-impact report published to PR (bronze/silver impact confirmed) |
+| 4 | CI-generated source feasibility report published to PR and reviewed by Data Architect |
+| 5 | Reconciliation logic explicitly agreed (not left as "TBD") |
+| 6 | Transformation rules peer-reviewed by Data Analyst for business correctness |
+| 7 | Mapping artefact committed to Git and Mapping PR merged |
 
 ---
 
@@ -115,56 +174,69 @@ work starts. Prevent later "semantic drift" and BI-layer logic invention.
 **Purpose:** Validate scope and physical realities before modelling or DDL work. Prevent mid-sprint
 discoveries of missing history, latency constraints, or unavailable source columns.
 
+> **Note:** The source feasibility report is **auto-generated by the Stage 1 Mapping PR CI pipeline**
+> on every PR push. Stage 2 is therefore an output of Stage 1, not a standalone manual activity. The
+> Data Architect reviews the CI-generated report as part of the Mapping PR review and confirms
+> feasibility before approving the PR.
+
 ### Inputs
 
-- Mapping draft (Stage 1)
-- Access to source systems or existing production DDLs
+- Versioned mapping committed to Git (Stage 1)
+- CI-generated source feasibility report (auto-generated by Stage 1 CI pipeline)
 
 ### Outputs / Evidence
 
 | Artefact | Description |
 |----------|-------------|
-| Authoritative Table Inventory | Confirmed list of in-scope Silver and Gold tables with row counts and schema snapshots |
-| Confirmed in-scope tables list | Subject areas and table counts reconciled against production reality |
-| Known constraints log | Latency issues, history gaps, code table problems, access limitations |
+| CI-generated source feasibility report | Auto-generated by Stage 1 CI pipeline; confirms: table inventory (in-scope tables, row counts, schema snapshots), known constraints (latency issues, history gaps, code table problems, access limitations) |
+| Confirmed in-scope tables list | Reviewed and confirmed by Data Architect as part of Mapping PR approval |
+| Known constraints log | Any discrepancies between "assumed scope" and "actual scope" captured in the CI report and resolved before Stage 3 begins |
 
 ### Exit Criteria (Definition of Done)
 
 | # | Criterion |
 |---|-----------|
-| 1 | In-scope table list reconciled with production reality (not estimates) |
+| 1 | CI-generated source feasibility report reviewed and confirmed by Data Architect |
 | 2 | Any discrepancy between "assumed scope" and "actual scope" is formally resolved or risk-accepted |
 | 3 | All source access confirmed (no blocked systems) |
-| 4 | Constraints log reviewed by Platform Lead |
+| 4 | Stage 1 Mapping PR merged (feasibility report approved as part of PR review) |
 
 ---
 
-## Stage 3 — Data + Physical Design Gate
+## Stage 3 — Data + Physical Design Gate (Model PR, CD-Deployed)
 
-**Purpose:** Ensure the physical model is fully buildable and enforceable — not "80% complete". No DDL
-is approved until it passes the schema standards checklist.
+**Purpose:** Ensure the physical model is fully buildable and enforceable — not "80% complete". Models
+are versioned in Erwin using Erwin's built-in version control. DDL is auto-generated by the pipeline
+from the approved Erwin model — no manual DDL authoring is permitted. **DQ rules for all layers
+(bronze, silver, and gold) are defined in Informatica IDGC as part of this stage.** The Model PR is
+raised only after all artifacts are ready (Erwin model version-tagged + auto-generated DDL committed +
+DQ rules authored for all layers).
 
 ### Inputs
 
-- Signed mapping (Stage 1)
-- Confirmed table inventory (Stage 2)
+- CI-generated change-impact report from Stage 1 (which entities/attributes are affected)
+- CI-generated source feasibility report from Stage 1 (confirmed table inventory)
 
 ### Outputs / Evidence
 
 | Artefact | Description |
 |----------|-------------|
-| Logical model updates | Entity-relationship model with grain, conformance, and key decisions documented |
-| Physical model | Physical model with keys, datatypes, and naming standards applied |
-| Modeler-approved DDL | `CREATE TABLE` / `ALTER TABLE` scripts for all in-scope tables, reviewed and signed off by Data Architect |
-| Schema standards checklist | Completed checklist (see below) for every in-scope table |
+| **Erwin model version** | Logical and physical model changes authored and version-tagged in Erwin using Erwin version control; version tag recorded in Model PR description |
+| **Auto-generated DDL** | `CREATE TABLE` / `ALTER TABLE` scripts auto-generated by the DDL generation pipeline from the approved Erwin model; committed to `/ddl/<catalog>/<schema>/` in Git; no manual DDL authoring permitted |
+| Updated mapping artefact | Bronze→silver and silver→gold mappings updated and version-incremented in Git to reflect the new model |
+| Gold and semantic layer models | Logical and physical models for the report / data product at gold and semantic layers, versioned in Erwin |
+| Schema standards checklist | Completed checklist (see below) for every in-scope table, attached to the Model PR |
+| **DQ rules — Bronze layer** | Standard checks + entity-specific rules authored in Informatica IDGC for all in-scope bronze entities (see [04-release-gates.md § 4.6.1](04-release-gates.md)) |
+| **DQ rules — Silver layer** | Referential integrity, deduplication, conformance, and null rate rules authored in Informatica IDGC for all in-scope silver entities |
+| **DQ rules — Gold layer** | KPI range, completeness, aggregation reconciliation, and cross-entity consistency rules authored in Informatica IDGC for all in-scope gold entities |
 
 ### Schema Standards Checklist (per table)
 
-Every in-scope table must pass **all** of the following before DDL is approved:
+Every in-scope table must pass **all** of the following before the Model PR can be approved:
 
 | Check | Requirement |
 |-------|-------------|
-| Primary Key | PK defined in the logical model **and** implemented in the DDL |
+| Primary Key | PK defined in the logical model **and** implemented in the auto-generated DDL |
 | Foreign Keys | FKs defined where applicable and implemented — or explicitly waived with documented rationale |
 | Datatypes | All columns have specific datatypes (no "all-string" default schemas) |
 | Naming convention | snake_case applied; boolean prefix `is_`/`has_`; timestamp suffix `_at`/`_dt` |
@@ -172,48 +244,160 @@ Every in-scope table must pass **all** of the following before DDL is approved:
 | Partition strategy | Partition column defined and justified (or explicitly not partitioned) |
 | Null constraints | Mandatory columns marked `NOT NULL`; nullable columns documented |
 
-> **Hard rule:** "No DDL is approved until it passes the schema standards checklist." DDL execution in
-> any environment is only permitted using modeler-reviewed, checklist-passed DDL scripts.
+### Model PR Gate (CD-Deployed to Databricks)
+
+The Model PR is raised **only after all artifacts are ready**: Erwin model version-tagged and DDL
+auto-generated by the pipeline. See [04-release-gates.md § 4.6.5](04-release-gates.md) for full detail.
+
+| Check | Automated / Manual |
+|-------|--------------------|
+| **Erwin model version tag** recorded in PR description | **Manual** — Data Architect records Erwin version tag |
+| **Auto-generated DDL** present under `/ddl/<catalog>/<schema>/` (pipeline stamp confirmed) | **Automated** — CI confirms DDL files were produced by the DDL generation pipeline |
+| DDL naming convention compliance (snake_case, version suffix, etc.) | **Automated** — CI DDL lint |
+| Schema standards checklist attached and all items passed | **Manual** — Data Architect PR review |
+| Updated mapping artefact version-incremented in Git | **Automated** — CI format lint |
+| **DQ rules authored for bronze, silver, and gold in Informatica IDGC** | **Automated** — CI queries Informatica API; PR blocked if any layer is missing rule coverage |
+| PR approved by Data Architect | **Manual** — GitHub PR approval |
+| On merge: CD pipeline creates / alters physical tables in Databricks | **Automated** — CD pipeline triggered by merge; no manual DDL permitted |
+
+> **Hard rules:**
+> - No DDL is approved until it passes the schema standards checklist.
+> - DDL must be auto-generated by the DDL generation pipeline from the approved Erwin model. Manual DDL authoring is prohibited.
+> - DDL execution in any environment is only permitted via the CD pipeline triggered by an approved Model PR.
 
 ### Exit Criteria (Definition of Done)
 
 | # | Criterion |
 |---|-----------|
 | 1 | Schema standards checklist completed and passed for every in-scope table |
-| 2 | DDL reviewed and signed off by Data Architect |
-| 3 | Logical model updated to reflect final physical design |
-| 4 | DDL stored in version control with a pull request review |
+| 2 | Erwin model version-tagged and Data Architect-approved via Erwin version control |
+| 3 | DDL auto-generated by pipeline from approved Erwin model; committed to Git |
+| 4 | Gold and semantic layer models versioned in Erwin |
+| 5 | Mapping artefact updated and version-incremented in Git |
+| 6 | **DQ rules authored in Informatica IDGC for all in-scope entities across bronze, silver, and gold layers** |
+| 7 | Model PR raised after all artifacts ready; PR merged; CD pipeline has created / altered all physical entities in Databricks |
 
 ---
 
 ## Stage 4 — Data Engineering Build + DDL Change Control Gate
 
 **Purpose:** Build pipelines only against approved schemas. Prevent uncontrolled schema drift.
+All pipeline code changes are delivered through **feature branch PRs**; the CD pipeline deploys
+on merge. New source entities follow a dedicated **Integration PR** flow.
 
 *This stage is the primary trigger for the **G0 – Dev Complete** governance gate.*
 
 ### Inputs
 
-- Modeler-approved DDL (Stage 3)
-- Versioned mapping and transformation rules (Stage 1)
+- Auto-generated DDL merged to integration branch via approved Model PR (Stage 3)
+- Versioned mapping and transformation rules committed to Git (Stage 1 / Stage 3 updates)
+- Physical entities created in Databricks by the Stage 3 CD pipeline
 
 ### Outputs / Evidence
 
 | Artefact | Description |
 |----------|-------------|
-| Bronze → Silver → Gold pipelines | Implemented, tested pipelines following [coding standards](01-data-standards.md) |
+| Bronze → Silver → Gold pipelines | Implemented, tested pipelines following [coding standards](01-data-standards.md), delivered via feature branch PRs |
 | Data tests | Row count checks, null constraint checks, business key uniqueness checks |
 | Deployment scripts | Environment promotion plan with rollback procedure |
 | G0 gate artefacts | See [04-release-gates.md § G0](04-release-gates.md) |
+
+---
+
+### Stage 4a — New Entity Onboarding (Integration PR)
+
+*Follow this sub-stage for every source entity being ingested into the platform for the first time.*
+
+**Steps:**
+
+1. Run data profiling on the source entity in Informatica IDGC.
+2. Determine the **Primary Key (PK)** and **Business Key (BK)**; record in the mapping artefact and DDL.
+3. Confirm that the bronze-layer DQ rules for this entity were authored in Informatica IDGC during
+   Stage 3. The standard DQ checks (see [04-release-gates.md § 4.6.1](04-release-gates.md)) are
+   automatically provisioned by the CD pipeline; entity-specific rules must already be authored.
+4. Register the entity in Informatica IDGC (profiling results, PK/BK metadata).
+5. Implement the ingestion pipeline (landing + bronze ingest) in a feature branch.
+6. Raise an **Integration PR** targeting the integration branch.
+
+**Integration PR CI checks (all must pass before human review):**
+
+| CI Check | Mechanism |
+|----------|-----------|
+| Profiling results available in Informatica IDGC | CI queries Informatica API |
+| Bronze DQ rules (standard + entity-specific) authored in Informatica IDGC | CI queries Informatica API |
+| PK and BK declared in DDL and mapping artefact | DDL lint + mapping schema validation |
+| DDL matches approved model from Stage 3 | File diff against Stage 3 merged DDL |
+| Unit tests present and passing | CI test execution |
+| Pipeline naming convention compliant | CI naming lint |
+
+> **Gate:** All CI checks must pass and the PR must receive at least 1 Data Engineer peer approval and
+> 1 Data Steward confirmation before merge. **On merge → CD pipeline deploys ingestion jobs and
+> auto-provisions standard bronze DQ checks.**
+
+---
+
+### Stage 4b — Silver Layer Pipeline (Feature Branch PR)
+
+*Follow this sub-stage when changes to the bronze→silver pipeline are required.*
+
+**Steps:**
+
+1. Confirm that silver-layer DQ rules for all in-scope entities were authored in Informatica IDGC
+   during Stage 3. If any are missing, author them before raising this PR.
+2. Implement the bronze→silver transformation pipeline in a feature branch:
+   `feature/<ticket-id>-<short-description>`.
+3. Raise a PR targeting the integration branch.
+
+**Silver Pipeline PR requirements:**
+
+| Requirement | CI/CD Mechanism |
+|-------------|-----------------|
+| **Silver-layer DQ rules authored in Informatica IDGC** | **CI queries Informatica API; PR blocked if DQ rules missing for any silver entity in scope** |
+| Feature branch naming convention | CI branch-name lint |
+| Unit tests present and passing | CI test execution |
+| Naming convention lint (pipeline / job / column) | CI naming lint |
+| All transformations traceable to the versioned mapping artefact | Manual — Data Architect PR review |
+| Peer code review: ≥ 1 Data Engineer approval | GitHub PR approval |
+
+> **Gate:** PR must pass all CI checks and approvals before merge. **On merge → CD pipeline deploys
+> the silver pipeline to the target environment.**
+
+---
+
+### Stage 4c — Gold Layer Pipeline (Feature Branch PR)
+
+*Follow this sub-stage when changes to the silver→gold pipeline are required.*
+
+**Steps:**
+
+1. Confirm that gold-layer DQ rules for all in-scope entities were authored in Informatica IDGC
+   during Stage 3. If any are missing, author them before raising this PR.
+2. Same implementation process as Stage 4b (feature branch → PR).
+
+**Gold Pipeline additional requirements:**
+
+| Additional Requirement | CI/CD Mechanism |
+|------------------------|-----------------|
+| **Gold-layer DQ rules authored in Informatica IDGC** | **CI queries Informatica API; PR blocked if DQ rules missing for any gold entity in scope** |
+| Data Analyst sign-off on business logic correctness | GitHub PR: at least 1 Data Analyst approval |
+
+> **Gate:** PR must pass all CI checks including Data Analyst approval before merge.
+> **On merge → CD pipeline deploys the gold pipeline.**
+
+---
 
 ### Exit Criteria (Definition of Done)
 
 | # | Criterion |
 |---|-----------|
 | 1 | Pipelines run end-to-end in Dev environment with repeatable, deterministic outputs |
-| 2 | DDL executed **only** using modeler-reviewed DDL from Stage 3 |
-| 3 | All G0 gate artefacts complete (peer review, CI green, schema registered) |
-| 4 | No ad-hoc schema changes applied outside the approved DDL scripts |
+| 2 | DDL executed **only** via CD pipeline triggered by approved Model PR from Stage 3 |
+| 3 | For new entities: Integration PR merged; ingestion jobs deployed by CD pipeline |
+| 4 | Silver-layer DQ rules (defined in Stage 3) confirmed in Informatica IDGC before Silver Pipeline PR merges |
+| 5 | Gold-layer DQ rules (defined in Stage 3) confirmed in Informatica IDGC before Gold Pipeline PR merges |
+| 6 | For silver/gold changes: Feature branch PRs merged; pipelines deployed by CD pipeline |
+| 7 | All G0 gate artefacts complete (peer review, CI green, schema registered) |
+| 8 | No ad-hoc schema changes applied outside the approved DDL scripts |
 
 ---
 

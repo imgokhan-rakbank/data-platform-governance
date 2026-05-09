@@ -111,3 +111,78 @@ Any dataset with **3 consecutive runs** below the applicable threshold is automa
 - Exported from Informatica IDGC by the Data Governance Officer.
 - Distributed to Domain Leads and EVP of Data.
 - Contents: DQ score trends by domain/layer, open exceptions, consecutive failure flags, rule coverage gaps.
+
+---
+
+## 2.5 DQ Rule Definitions and Implementation Across Layers
+
+DQ rules follow a **two-step pattern** aligned to the delivery lifecycle:
+
+- **Step 1 — Definition (Stage 3 / Phase 3 — Model PR):** All DQ rules for bronze, silver, and gold
+  layers are **defined in Informatica IDGC** as part of the data modeling stage. Rule definitions are
+  linked to the data model and confirmed by the Model PR CI gate before merge
+  (see [04-release-gates.md § 4.6.1](04-release-gates.md) and [04-release-gates.md § 4.6.5](04-release-gates.md)).
+- **Step 2 — Implementation / Deployment (Stage 4 / Phases 4a and 4b):** DQ rules are **activated
+  and confirmed deployed** when the corresponding pipeline PR is merged. For bronze, the standard rule
+  set is auto-provisioned by the CD pipeline. For silver and gold, CI confirms rules are present before
+  the pipeline PR can merge.
+
+### Bronze Layer DQ Rules (defined in Stage 3; auto-provisioned at Stage 4a merge)
+
+| Rule | Informatica Rule Type | Threshold | Applies To |
+|------|-----------------------|-----------|------------|
+| **Record count reconciliation** | Row count check against source system | ≤ 0.1% variance for batch feeds; threshold defined per entity in Data Product Brief for real-time / near-real-time feeds | Landing → Bronze, Bronze → Silver |
+| **Business key (BK) uniqueness** | Duplicate detection on the defined BK column(s) | Zero tolerance — no duplicate BK values | Bronze, Silver |
+| **Mandatory column null rate** | Null / blank check on every `NOT NULL` column | Zero tolerance | Bronze, Silver |
+| **Arrival SLA check** | Data arrival timestamp vs agreed load SLA | Per-entity SLA from Data Product Brief | Landing |
+
+The standard checks are defined in Stage 3 and auto-provisioned by the CD pipeline when an
+Integration PR (Stage 4a) is merged. The Data Steward must additionally author any entity-specific
+bronze rules in Informatica IDGC during Stage 3.
+
+### Silver Layer DQ Rules (defined in Stage 3; CI-confirmed before Stage 4b merge)
+
+The Data Steward must author silver-layer DQ rules in Informatica IDGC during Stage 3. Silver-layer
+rules must cover:
+
+| Rule type | Description |
+|-----------|-------------|
+| **Referential integrity** | FK relationships validated post-transformation |
+| **Deduplication** | No duplicate business keys in silver output |
+| **Conformance** | Enumerated values within allowed set; dates in valid range |
+| **Mandatory-column null rate** | Null rate on silver-layer `NOT NULL` columns |
+
+CI confirms these rules are authored in Informatica IDGC before the Silver Pipeline PR can be merged
+(see [04-release-gates.md § 4.6.7](04-release-gates.md)).
+
+### Gold Layer DQ Rules (defined in Stage 3; CI-confirmed before Stage 4c merge)
+
+The Data Steward and Data Analyst must author gold-layer DQ rules in Informatica IDGC during Stage 3.
+Gold-layer rules must cover:
+
+| Rule type | Description |
+|-----------|-------------|
+| **KPI range checks** | Values within historically validated bounds; alert on anomalies |
+| **Business rule completeness** | No null values on KPI numerator/denominator columns |
+| **Aggregation reconciliation** | Gold-layer totals reconcile with silver-layer source records |
+| **Cross-entity consistency** | Where KPIs span multiple source entities, values are mutually consistent |
+
+CI confirms these rules are authored in Informatica IDGC before the Gold Pipeline PR can be merged
+(see [04-release-gates.md § 4.6.7](04-release-gates.md)).
+
+### Provisioning
+
+- All DQ rules for all layers (bronze, silver, gold) are defined in Informatica IDGC during Stage 3
+  (Phase 3 — Model PR). The CI gate on the Model PR confirms rule coverage before merge.
+- The standard bronze rule set is provisioned automatically by the CD pipeline when an Integration PR
+  (Stage 4a) is merged.
+- The entity's PK and BK must be declared in the DDL and mapping artefact before the CD pipeline can
+  provision the uniqueness check.
+- Thresholds for the record count reconciliation check are read from the Data Product Brief at
+  provisioning time. If no threshold is specified, the default of 0.1 % is applied.
+
+### Entity-Specific Rules
+
+In addition to the standard baseline, the Data Steward must author entity-specific DQ rules in
+Informatica IDGC covering the remaining applicable DQ dimensions (see § 2.1) before the entity can
+progress past the G1 – Bronze Gate.
